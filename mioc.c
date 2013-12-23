@@ -4,22 +4,76 @@
 #include <linux/fs.h>
 #include <linux/device.h>
 #include <linux/cdev.h>
+#include <linux/string.h>
+#include <asm/uaccess.h>
 
 #define MIOC_CHRDEV_COUNT	1		/* minor numbers */
 #define MIOC_CHRDEV_NAME	"Masha"
 #define MIOC_CLASS_NAME		"mioc"
 #define MIOC_DEV_NAME		"mioc"
+#define MIOC_BUF_SIZE		80
 
 struct mioc {
 	dev_t dev;
 	struct cdev cdev;
 	struct class *class;
+	char *msg;
 };
 
 static struct mioc *mioc;
+
+/* ---------------------------- File Operations ---------------------------- */
+
+static ssize_t mioc_read(struct file *file, char __user *buf,
+		size_t count, loff_t *ppos)
+{
+	if (*ppos >= MIOC_BUF_SIZE)
+		return 0;
+	if (*ppos + count > MIOC_BUF_SIZE)
+		count = MIOC_BUF_SIZE - *ppos;
+
+	if (copy_to_user(buf, mioc->msg + *ppos, count))
+		return -EFAULT;
+	*ppos += count;
+
+	return count;
+}
+
+static ssize_t mioc_write(struct file *file, const char __user *buf,
+		size_t count, loff_t *ppos)
+{
+	if (count >= MIOC_BUF_SIZE) {
+		pr_err("MIOC: too long string\n");
+		return -EINVAL;
+	}
+
+	if (copy_from_user(mioc->msg, buf, count))
+		return -EFAULT;
+
+	memset(mioc->msg + count, '\0', MIOC_BUF_SIZE - count);
+
+	return count;
+}
+
+static int mioc_open(struct inode *inode, struct file *file)
+{
+	return 0;
+}
+
+static int mioc_release(struct inode *inode, struct file *file)
+{
+	return 0;
+}
+
 static struct file_operations mioc_fops = {
-	/* TODO: finish this one */
+	.owner = THIS_MODULE,
+	.read = mioc_read,
+	.write = mioc_write,
+	.open = mioc_open,
+	.release = mioc_release,
 };
+
+/* --------------------------- Module Operations --------------------------- */
 
 static int __init mioc_init(void)
 {
@@ -31,6 +85,12 @@ static int __init mioc_init(void)
 	mioc = kzalloc(sizeof(*mioc), GFP_KERNEL);
 	if (mioc == NULL)
 		return -ENOMEM;
+
+	mioc->msg = kzalloc(sizeof(char) * MIOC_BUF_SIZE, GFP_KERNEL);
+	if (mioc->msg == NULL) {
+		ret = -ENOMEM;
+		goto err_msg;
+	}
 
 	ret = alloc_chrdev_region(&mioc->dev, 0, MIOC_CHRDEV_COUNT,
 			MIOC_CHRDEV_NAME);
@@ -69,6 +129,8 @@ err_device:
 err_class:
 	unregister_chrdev_region(mioc->dev, MIOC_CHRDEV_COUNT);
 err_chrdev:
+	kfree(mioc->msg);
+err_msg:
 	kfree(mioc);
 	return ret;
 }
@@ -80,6 +142,7 @@ static void __exit mioc_clean(void)
 	class_destroy(mioc->class);
 	unregister_chrdev_region(mioc->dev, 1);
 
+	kfree(mioc->msg);
 	kfree(mioc);
 
 	pr_info("MIOC: removed\n");
