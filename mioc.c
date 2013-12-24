@@ -4,7 +4,6 @@
 #include <linux/fs.h>
 #include <linux/device.h>
 #include <linux/cdev.h>
-#include <linux/string.h>
 #include <asm/uaccess.h>
 
 #define MIOC_CHRDEV_COUNT	1		/* minor numbers */
@@ -18,6 +17,7 @@ struct mioc {
 	struct cdev cdev;
 	struct class *class;
 	char *msg;
+	size_t msg_len;
 };
 
 static struct mioc *mioc;
@@ -27,10 +27,10 @@ static struct mioc *mioc;
 static ssize_t mioc_read(struct file *file, char __user *buf,
 		size_t count, loff_t *ppos)
 {
-	if (*ppos >= MIOC_BUF_SIZE)
+	if (*ppos >= mioc->msg_len)
 		return 0;
-	if (*ppos + count > MIOC_BUF_SIZE)
-		count = MIOC_BUF_SIZE - *ppos;
+	if (*ppos + count > mioc->msg_len)
+		count = mioc->msg_len - *ppos;
 
 	if (copy_to_user(buf, mioc->msg + *ppos, count))
 		return -EFAULT;
@@ -42,7 +42,7 @@ static ssize_t mioc_read(struct file *file, char __user *buf,
 static ssize_t mioc_write(struct file *file, const char __user *buf,
 		size_t count, loff_t *ppos)
 {
-	if (count >= MIOC_BUF_SIZE) {
+	if (count > MIOC_BUF_SIZE) {
 		pr_err("MIOC: too long string\n");
 		return -EINVAL;
 	}
@@ -50,7 +50,7 @@ static ssize_t mioc_write(struct file *file, const char __user *buf,
 	if (copy_from_user(mioc->msg, buf, count))
 		return -EFAULT;
 
-	memset(mioc->msg + count, '\0', MIOC_BUF_SIZE - count);
+	mioc->msg_len = count;
 
 	return count;
 }
@@ -86,7 +86,7 @@ static int __init mioc_init(void)
 	if (mioc == NULL)
 		return -ENOMEM;
 
-	mioc->msg = kzalloc(sizeof(char) * MIOC_BUF_SIZE, GFP_KERNEL);
+	mioc->msg = kmalloc(sizeof(char) * MIOC_BUF_SIZE, GFP_KERNEL);
 	if (mioc->msg == NULL) {
 		ret = -ENOMEM;
 		goto err_msg;
