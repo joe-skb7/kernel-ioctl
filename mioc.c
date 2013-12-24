@@ -8,6 +8,8 @@
 #include <linux/ctype.h>
 #include <asm/uaccess.h>
 
+#include "mioc.h"
+
 #define MIOC_CHRDEV_COUNT	1		/* minor numbers */
 #define MIOC_CHRDEV_NAME	"Masha"
 #define MIOC_CLASS_NAME		"mioc"
@@ -116,6 +118,30 @@ err1:
 	return ret;
 }
 
+static long mioc_ioctl_write(const char __user *arg)
+{
+	long len;
+
+	/* length includes terminating null character */
+	len = strnlen_user(arg, MIOC_MSG_SIZE);
+	if (len >= MIOC_MSG_SIZE) {
+		pr_err("MIOC: too long string via ioctl\n");
+		return -EFAULT;
+	}
+
+	mioc->msg_len = 0;
+	if (copy_from_user(mioc->msg, arg, len))
+		return -EFAULT;
+	mioc->msg_len = len;
+
+	return 0;
+}
+
+static void mioc_ioctl_erase(void)
+{
+	mioc->msg_len = 0;
+}
+
 /* ---------------------------- File Operations ---------------------------- */
 
 static ssize_t mioc_read(struct file *file, char __user *buf,
@@ -183,6 +209,38 @@ err_copy:
 	return -EFAULT;
 }
 
+static long mioc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+{
+	int err = 0;
+
+	/* Address verification */
+	if (_IOC_TYPE(cmd) != MIOC_IOC_MAGIC)
+		return -ENOTTY;
+	if (_IOC_NR(cmd) > MIOC_IOC_MAXNR)
+		return -ENOTTY;
+	if (_IOC_DIR(cmd) & _IOC_READ)
+		err = !access_ok(VERIFY_WRITE, (void __user *)arg,
+				_IOC_SIZE(cmd));
+	else if (_IOC_DIR(cmd) & _IOC_WRITE)
+		err = !access_ok(VERIFY_READ, (void __user *)arg,
+				_IOC_SIZE(cmd));
+	if (err)
+		return -EFAULT;
+
+	/* Processing of ioctls */
+	switch (cmd) {
+	case MIOC_IOCWRITE:
+		return mioc_ioctl_write((char __user *)arg);
+	case MIOC_IOCERASE:
+		mioc_ioctl_erase();
+		break;
+	default:
+		return -ENOTTY;
+	}
+
+	return 0;
+}
+
 static int mioc_open(struct inode *inode, struct file *file)
 {
 	return 0;
@@ -197,6 +255,7 @@ static struct file_operations mioc_fops = {
 	.owner = THIS_MODULE,
 	.read = mioc_read,
 	.write = mioc_write,
+	.unlocked_ioctl = mioc_ioctl,
 	.open = mioc_open,
 	.release = mioc_release,
 };
