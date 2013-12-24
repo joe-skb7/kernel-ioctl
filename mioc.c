@@ -10,7 +10,7 @@
 #define MIOC_CHRDEV_NAME	"Masha"
 #define MIOC_CLASS_NAME		"mioc"
 #define MIOC_DEV_NAME		"mioc"
-#define MIOC_BUF_SIZE		80
+#define MIOC_MSG_SIZE		80		/* len of mioc->msg buffer */
 
 enum mioc_direction {
 	DIR_FORWARD	= 0,
@@ -67,7 +67,7 @@ static ssize_t mioc_read(struct file *file, char __user *buf,
 static ssize_t mioc_write(struct file *file, const char __user *buf,
 		size_t count, loff_t *ppos)
 {
-	if (count > MIOC_BUF_SIZE) {
+	if (count > MIOC_CMD_MAX) {
 		pr_err("MIOC: too long string\n");
 		return -EINVAL;
 	}
@@ -111,7 +111,7 @@ static int __init mioc_init(void)
 	if (mioc == NULL)
 		return -ENOMEM;
 
-	mioc->msg = kmalloc(sizeof(char) * MIOC_BUF_SIZE, GFP_KERNEL);
+	mioc->msg = kmalloc(sizeof(char) * MIOC_MSG_SIZE, GFP_KERNEL);
 	if (mioc->msg == NULL) {
 		ret = -ENOMEM;
 		goto err_msg;
