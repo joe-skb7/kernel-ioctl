@@ -211,23 +211,6 @@ err_copy:
 
 static long mioc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
-	int err = 0;
-
-	/* Address verification */
-	if (_IOC_TYPE(cmd) != MIOC_IOC_MAGIC)
-		return -ENOTTY;
-	if (_IOC_NR(cmd) > MIOC_IOC_MAXNR)
-		return -ENOTTY;
-	if (_IOC_DIR(cmd) & _IOC_READ)
-		err = !access_ok(VERIFY_WRITE, (void __user *)arg,
-				_IOC_SIZE(cmd));
-	else if (_IOC_DIR(cmd) & _IOC_WRITE)
-		err = !access_ok(VERIFY_READ, (void __user *)arg,
-				_IOC_SIZE(cmd));
-	if (err)
-		return -EFAULT;
-
-	/* Processing of ioctls */
 	switch (cmd) {
 	case MIOC_IOCWRITE:
 		return mioc_ioctl_write((char __user *)arg);
