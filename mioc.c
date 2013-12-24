@@ -12,12 +12,18 @@
 #define MIOC_DEV_NAME		"mioc"
 #define MIOC_BUF_SIZE		80
 
+enum mioc_direction {
+	DIR_FORWARD	= 0,
+	DIR_BACKWARD	= 1,
+};
+
 struct mioc {
 	dev_t dev;
 	struct cdev cdev;
 	struct class *class;
 	char *msg;
 	size_t msg_len;
+	u8 dir:1;
 };
 
 static struct mioc *mioc;
@@ -32,8 +38,27 @@ static ssize_t mioc_read(struct file *file, char __user *buf,
 	if (*ppos + count > mioc->msg_len)
 		count = mioc->msg_len - *ppos;
 
-	if (copy_to_user(buf, mioc->msg + *ppos, count))
+	switch (mioc->dir) {
+	case DIR_FORWARD:
+		if (copy_to_user(buf, mioc->msg + *ppos, count))
+			return -EFAULT;
+		break;
+	case DIR_BACKWARD: {
+		int i;
+		int start = mioc->msg_len - 1 - *ppos;
+		int end = start - count;
+
+		for (i = start; i > end; --i) {
+			if (put_user(mioc->msg[i], buf++))
+				return -EFAULT;
+		}
+		break;
+	}
+	default:
+		pr_err("MIOC: unknown direction\n");
 		return -EFAULT;
+	}
+
 	*ppos += count;
 
 	return count;
