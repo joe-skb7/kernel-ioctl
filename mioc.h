@@ -4,7 +4,7 @@
  *
  * The declarations here have to be in a header file, because
  * they need to be known both to the kernel module
- * (in mioc.c) and the process calling mioc-us (mioc-us.c)
+ * (in mioc.c) and the process calling mioc-app (mioc-app.c)
  */
 
 #ifndef MIOC_H
