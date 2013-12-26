@@ -6,6 +6,7 @@
 #include <linux/cdev.h>
 #include <linux/string.h>
 #include <linux/ctype.h>
+#include <linux/mutex.h>
 #include <asm/uaccess.h>
 
 #include "mioc.h"
@@ -33,6 +34,7 @@ struct mioc {
 	char *msg;
 	size_t msg_len;
 	u8 dir:1;
+	struct mutex mutex;
 };
 
 static struct mioc *mioc;
@@ -41,12 +43,19 @@ static struct mioc *mioc;
 
 static int mioc_set_direction(char *arg)
 {
+	enum mioc_direction dir;
+
 	if (strcmp(arg, ARG_FORWARD) == 0)
-		mioc->dir = DIR_FORWARD;
+		dir = DIR_FORWARD;
 	else if (strcmp(arg, ARG_BACKWARD) == 0)
-		mioc->dir = DIR_BACKWARD;
+		dir = DIR_BACKWARD;
 	else
 		return -1;
+
+	if (mutex_lock_interruptible(&mioc->mutex))
+		return -ERESTARTSYS;
+	mioc->dir = dir;
+	mutex_unlock(&mioc->mutex);
 
 	return 0;
 }
@@ -129,17 +138,31 @@ static long mioc_ioctl_write(const char __user *arg)
 		return -EFAULT;
 	}
 
+	if (mutex_lock_interruptible(&mioc->mutex))
+		return -ERESTARTSYS;
+
 	mioc->msg_len = 0;
-	if (copy_from_user(mioc->msg, arg, len))
+	if (copy_from_user(mioc->msg, arg, len)) {
+		mutex_unlock(&mioc->mutex);
 		return -EFAULT;
+	}
 	mioc->msg_len = len;
+
+	mutex_unlock(&mioc->mutex);
 
 	return 0;
 }
 
-static void mioc_ioctl_erase(void)
+static int mioc_ioctl_erase(void)
 {
+	if (mutex_lock_interruptible(&mioc->mutex))
+		return -ERESTARTSYS;
+
 	mioc->msg_len = 0;
+
+	mutex_unlock(&mioc->mutex);
+
+	return 0;
 }
 
 /* ---------------------------- File Operations ---------------------------- */
@@ -147,15 +170,24 @@ static void mioc_ioctl_erase(void)
 static ssize_t mioc_read(struct file *file, char __user *buf,
 		size_t count, loff_t *ppos)
 {
-	if (*ppos >= mioc->msg_len)
-		return 0;
+	ssize_t ret;
+
+	if (mutex_lock_interruptible(&mioc->mutex))
+		return -ERESTARTSYS;
+
+	if (*ppos >= mioc->msg_len) {
+		ret = 0;
+		goto out_unlock;
+	}
 	if (*ppos + count > mioc->msg_len)
 		count = mioc->msg_len - *ppos;
 
 	switch (mioc->dir) {
 	case DIR_FORWARD:
-		if (copy_to_user(buf, mioc->msg + *ppos, count))
-			return -EFAULT;
+		if (copy_to_user(buf, mioc->msg + *ppos, count)) {
+			ret = -EFAULT;
+			goto out_unlock;
+		}
 		break;
 	case DIR_BACKWARD: {
 		int i;
@@ -163,19 +195,28 @@ static ssize_t mioc_read(struct file *file, char __user *buf,
 		int end = start - count;
 
 		for (i = start; i > end; --i) {
-			if (put_user(mioc->msg[i], buf++))
-				return -EFAULT;
+			if (put_user(mioc->msg[i], buf++)) {
+				ret = -EFAULT;
+				goto out_unlock;
+			}
 		}
 		break;
 	}
 	default:
 		pr_err("MIOC: unknown direction\n");
-		return -EFAULT;
+		ret = -EFAULT;
+		goto out_unlock;
 	}
 
 	*ppos += count;
 
+	mutex_unlock(&mioc->mutex);
+
 	return count;
+
+out_unlock:
+	mutex_unlock(&mioc->mutex);
+	return ret;
 }
 
 static ssize_t mioc_write(struct file *file, const char __user *buf,
@@ -215,8 +256,7 @@ static long mioc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	case MIOC_IOCWRITE:
 		return mioc_ioctl_write((char __user *)arg);
 	case MIOC_IOCERASE:
-		mioc_ioctl_erase();
-		break;
+		return mioc_ioctl_erase();
 	default:
 		return -ENOTTY;
 	}
@@ -285,6 +325,8 @@ static int __init mioc_init(void)
 		goto err_device;
 	}
 
+	mutex_init(&mioc->mutex);
+
 	cdev_init(&mioc->cdev, &mioc_fops);
 	ret = cdev_add(&mioc->cdev, mioc->dev, MIOC_CHRDEV_COUNT);
 	if (ret < 0)
@@ -293,6 +335,7 @@ static int __init mioc_init(void)
 	return 0;
 
 err_cdev:
+	mutex_destroy(&mioc->mutex);
 	device_destroy(mioc->class, mioc->dev);
 err_device:
 	class_destroy(mioc->class);
@@ -308,6 +351,7 @@ err_msg:
 static void __exit mioc_clean(void)
 {
 	cdev_del(&mioc->cdev);
+	mutex_destroy(&mioc->mutex);
 	device_destroy(mioc->class, mioc->dev);
 	class_destroy(mioc->class);
 	unregister_chrdev_region(mioc->dev, 1);
