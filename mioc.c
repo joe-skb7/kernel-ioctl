@@ -290,8 +290,6 @@ static int __init mioc_init(void)
 	int ret;
 	struct device *d;
 
-	pr_info("MIOC: probing...\n");
-
 	mioc = kzalloc(sizeof(*mioc), GFP_KERNEL);
 	if (mioc == NULL)
 		return -ENOMEM;
@@ -358,8 +356,6 @@ static void __exit mioc_clean(void)
 
 	kfree(mioc->msg);
 	kfree(mioc);
-
-	pr_info("MIOC: removed\n");
 }
 
 module_init(mioc_init);
