@@ -41,6 +41,9 @@ static struct mioc *mioc;
 
 /* --------------------------- Common Functions ---------------------------- */
 
+/*
+ * Parse direction argument and change direction option state.
+ */
 static int mioc_set_direction(char *arg)
 {
 	enum mioc_direction dir;
@@ -60,6 +63,10 @@ static int mioc_set_direction(char *arg)
 	return 0;
 }
 
+/*
+ * Parse user command and perform it. Currently only "direction" command
+ * is supported.
+ */
 static int mioc_parse_and_perform(char *str)
 {
 	char *end, *token;
@@ -127,11 +134,14 @@ err1:
 	return ret;
 }
 
+/*
+ * Process "write message" IOCTL call.
+ */
 static long mioc_ioctl_write(const char __user *arg)
 {
 	long len;
 
-	/* length includes terminating null character */
+	/* Length includes terminating null character */
 	len = strnlen_user(arg, MIOC_MSG_SIZE);
 	if (len >= MIOC_MSG_SIZE) {
 		pr_err("MIOC: too long string via ioctl\n");
@@ -153,6 +163,9 @@ static long mioc_ioctl_write(const char __user *arg)
 	return 0;
 }
 
+/*
+ * Process "erase message" IOCTL call.
+ */
 static int mioc_ioctl_erase(void)
 {
 	if (mutex_lock_interruptible(&mioc->mutex))
@@ -167,8 +180,12 @@ static int mioc_ioctl_erase(void)
 
 /* ---------------------------- File Operations ---------------------------- */
 
-static ssize_t mioc_read(struct file *file, char __user *buf,
-		size_t count, loff_t *ppos)
+/*
+ * Print out driver's message buffer.
+ * The way of printing depends on direction option ("forward" by default).
+ */
+static ssize_t mioc_read(struct file *file, char __user *buf, size_t count,
+		loff_t *ppos)
 {
 	ssize_t ret;
 
@@ -219,6 +236,12 @@ out_unlock:
 	return ret;
 }
 
+/*
+ * Parse and perform command from user.
+ * For now the only available command is "direction". It has one argument:
+ * - "forward": message will be printed as written
+ * - "back":    message will be printed ass backwards
+ */
 static ssize_t mioc_write(struct file *file, const char __user *buf,
 		size_t count, loff_t *ppos)
 {
@@ -250,6 +273,10 @@ err_copy:
 	return -EFAULT;
 }
 
+/*
+ * Perform IOCTL call from userspace application.
+ * There are 2 ioctls supported: "write message" and "erase message".
+ */
 static long mioc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	switch (cmd) {
