@@ -44,7 +44,7 @@ struct mioc {
 	struct class *class;
 	char *msg;
 	size_t msg_len;
-	u8 dir:1;
+	enum mioc_direction dir;
 	struct mutex mutex;
 };
 
