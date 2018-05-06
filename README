@@ -9,23 +9,24 @@ Dependencies:
  - sparse (or remove "C=1" and change "cgcc" to "gcc" in Makefile)
 
 To build both MIOC module and MIOC userspace app just do:
-$ make
+
+    $ make
 
 
 Test case
 ---------
 
-# insmod mioc.ko
-# echo foo bar > test.txt
+    # insmod mioc.ko
+    # echo foo bar > test.txt
 
-# ./mioc-app -w test.txt
-# cat /dev/mioc
+    # ./mioc-app -w test.txt
+    # cat /dev/mioc
 
-# echo direction back > /dev/mioc
-# cat /dev/mioc
+    # echo direction back > /dev/mioc
+    # cat /dev/mioc
 
-# ./mioc-app -e
-# cat /dev/mioc
+    # ./mioc-app -e
+    # cat /dev/mioc
 
-# rm test.txt
-# rmmod mioc
+    # rm test.txt
+    # rmmod mioc
